@@ -83,6 +83,7 @@ C_TEXTDATA [\u0020-\u0021\u0023-\u0026\u0028-\u003B\u003D\u003F-\u007E] // every
 <INITIAL>("railroad-beta") { this.pushState('diag'); return 'railroad-beta' }
 
 <*>([A-Za-z_][A-Za-z0-9_]*) { return 'IDENTIFIER' }
+<*>([0-9]|[1-9][0-9]*) { return 'NUMBER' }
 <*>({C_VERTICAL_LINE}|{C_SLASH}) { return '|' }
 <*>({C_COMMA}) { return ',' }
 <*>("::="|":="|":"|"="|"->") { return '=' }
@@ -93,10 +94,12 @@ C_TEXTDATA [\u0020-\u0021\u0023-\u0026\u0028-\u003B\u003D\u003F-\u007E] // every
 <*>({C_RIGHT_SQUARE_BRACKET}) { return ']' }
 <*>({C_LEFT_CURLY_BRACKET}) { return '{' }
 <*>({C_RIGHT_CURLY_BRACKET}) { return '}' }
+<*>[-] { return '-' }
 <*>({C_LESS_THAN}) { this.pushState('nonterm'); return '<' }
 <*>({C_GREATER_THAN}) { return '>' }
 <*>({C_QUOTATION_MARK}) { this.pushState('qstring'); return '"' }
 <*>({C_APOSTROPHE}) { this.pushState('string'); return 'APOSTROPHE' }
+// <*>[*] { return '*' }
 <*>({C_QUANTIFIER}) { return 'QUANTIFIER' }
 <*><<EOF>> { return 'EOF' } // match end of file
 <*>(\s+) {}
@@ -242,23 +245,37 @@ alternatives
   ;
 
 sequence
-  : (fact ","?)+\[facts_] {
-      $$ = yy.addSequence(Object.values($facts_));
+  : (item ","?)+\[items_] {
+      $$ = yy.addSequence(Object.values($items_));
     }
   ;
 
+item
+  : fact { $$ = $fact; }
+  | fact\[base_] '-' fact\[except_] { $$ = yy.addException($base_, $except_) }
+  ;
+
 fact
-  : prim QUANTIFIER?\[quantifier_] {
-      switch($quantifier_) {
-        case '?': $$ = yy.addZeroOrOne($prim); break;
-        case '+': $$ = yy.addOneOrMany($prim); break;
-        case '*': $$ = yy.addZeroOrMany($prim); break;
-        default: $$ = $prim;
-      };
-    }
-  | integer '*' prim {
-    
+  : prim '?' {
+    $$ = yy.addZeroOrOne($prim);
   }
+  | prim '+' {
+    $$ = yy.addOneOrMany($prim);
+  }
+  | prim '*' {
+    $$ = yy.addZeroOrMany($prim);
+  }
+  | NUMBER[number_] '*' prim {
+    $$ = yy.addRepetitions($prim, $number_);
+  }
+  // | prim QUANTIFIER?\[quantifier_] {
+  //     switch($quantifier_) {
+  //       case '?': $$ = yy.addZeroOrOne($prim); break;
+  //       case '+': $$ = yy.addOneOrMany($prim); break;
+  //       case '*': $$ = yy.addZeroOrMany($prim); break;
+  //       default: $$ = $prim;
+  //     };
+  //   }
   ;
 
 prim
@@ -266,7 +283,7 @@ prim
   | '[' choice ']' { $$=yy.addZeroOrOne($choice); }
   | '{' choice '}' { $$=yy.addZeroOrMany($choice); }
   | '"' (QSTRING)?\[qstring_] '"' {
-      $$=yy.addTerm($qstring_, '"'); // TODO: add bunch of terminals instead of one?
+      $$=yy.addTerm($qstring_, '"');
     }
   | APOSTROPHE (STRING)?\[string_] APOSTROPHE {
       $$=yy.addTerm($string_, "'");
